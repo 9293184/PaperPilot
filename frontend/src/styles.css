@@ -18186,6 +18186,56 @@ body.dark-mode .boot-error-card pre,
   .paper-tooltip {
     display: none !important;
   }
+
+  /* ===== 移动浏览器工具栏 =====
+     vh 会把浏览器地址栏/工具栏的高度也算进去，导致底部内容被工具栏盖住；
+     dvh 跟随实际可视高度（不支持的旧浏览器回退到上面的 vh）。 */
+  .app-shell,
+  .sidebar,
+  .content,
+  .personalized-home,
+  .reader-page {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* 带 home indicator 的机型：底部再留出安全区 */
+  .content {
+    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 弹层/抽屉按实际可视高度限制，避免超出屏幕被裁掉 */
+  .paper-drawer-menu {
+    max-height: calc(100dvh - 16px);
+  }
+
+  .paper-drawer-submenu {
+    max-height: min(320px, calc(100dvh - 16px));
+  }
+
+  .onboarding-dialog {
+    max-height: calc(100dvh - 48px);
+  }
+
+  /* ===== 窄屏下的挤压问题 =====
+     .settings-row 是 flex + .settings-row-info 有 min-width: 0，
+     窄屏时文字列会被右侧开关挤到只剩一个字宽，中文于是变成竖排。
+     改为上下排列。 */
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .settings-row .settings-switch,
+  .settings-row .placeholder-chip {
+    align-self: flex-start;
+  }
+
+  /* 表单的两列布局在手机上改为单列，避免输入框过窄 */
+  .api-form-row-2col {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {
