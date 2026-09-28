@@ -58,7 +58,7 @@ PROVIDER_PRESETS: tuple[ProviderPreset, ...] = (
     ProviderPreset(
         "deepseek", "DeepSeek", PROTOCOL_OPENAI,
         "https://api.deepseek.com",
-        ["deepseek-v4-pro", "deepseek-flash"],
+        ["deepseek-flash", "deepseek-v4-pro"],
         "默认",
     ),
     ProviderPreset(
@@ -102,7 +102,7 @@ _PRESET_BY_ID: dict[str, ProviderPreset] = {p.id: p for p in PROVIDER_PRESETS}
 DEFAULT_PROVIDER_ID = "deepseek"
 DEFAULT_PROTOCOL = PROTOCOL_OPENAI
 DEFAULT_BASE_URL = _PRESET_BY_ID[DEFAULT_PROVIDER_ID].default_base_url
-DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_MODEL = "deepseek-flash"
 
 # 向后兼容的旧常量名（历史代码/文档可能引用）
 DEEPSEEK_MODELS = list(_PRESET_BY_ID["deepseek"].models)

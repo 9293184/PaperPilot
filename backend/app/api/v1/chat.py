@@ -52,7 +52,7 @@ class SendMessageRequest(BaseModel):
     message: str
     selected_text: str = ""
     edit_message_id: str = ""  # If set, treat as editing/replacing this message
-    model: str = ""  # Optional model override (e.g. 'deepseek-v4-pro', 'deepseek-v4-flash')
+    model: str = ""  # Optional model override (e.g. 'deepseek-flash', 'deepseek-v4-pro')
 
 
 class EditMessageRequest(BaseModel):

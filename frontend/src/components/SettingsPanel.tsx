@@ -146,6 +146,9 @@ const BACKUP_SUB_TABS: { id: BackupSubTab; label: string }[] = [
   { id: 'restore', label: '恢复' },
 ]
 
+// 模型下拉里「手动输入」选项的哨兵值
+const MANUAL_MODEL_VALUE = '__manual_model__'
+
 export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, initialSection, initialApiSubTab, showSidebarTagDots, onShowSidebarTagDotsChange, personalizedHome, onPersonalizedHomeChange, browserFullscreen, onBrowserFullscreenChange, onClose, onThemeModeChange, onRefreshSunTimes, onReopenOnboarding }: SettingsPanelProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -167,7 +170,7 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
     protocol: 'openai',
     api_key: '',
     base_url: 'https://api.deepseek.com',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
   })
   const [showApiKey, setShowApiKey] = useState(false)
   const [isLoadingConfig, setIsLoadingConfig] = useState(false)
@@ -179,6 +182,8 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
   const [fetchedModels, setFetchedModels] = useState<string[]>([])
   const [isFetchingModels, setIsFetchingModels] = useState(false)
   const [modelsMessage, setModelsMessage] = useState('')
+  // 是否处于「手动输入模型名」模式
+  const [manualModel, setManualModel] = useState(false)
 
   // MinerU config state
   const [mineruFormData, setMineruFormData] = useState<MinerUConfigUpdate>({
@@ -476,6 +481,7 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
     // 换厂商后旧的模型列表不再适用
     setFetchedModels([])
     setModelsMessage('')
+    setManualModel(false)
     setTestResult(null)
     setSaveMessage('')
   }
@@ -494,9 +500,12 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
       setModelsMessage(result.message)
       if (result.success && result.models.length > 0) {
         setFetchedModels(result.models)
-        // 当前模型不在列表里就自动选中第一个，省得用户再点一次
-        if (!result.models.includes(formData.model)) {
-          setFormData(prev => ({ ...prev, model: result.models[0] }))
+        // 回到下拉模式展示列表；若当前模型不在列表里就自动选中第一个。
+        // 手动输入模式下不动用户填的值。
+        if (!manualModel) {
+          setFormData(prev => (
+            result.models.includes(prev.model) ? prev : { ...prev, model: result.models[0] }
+          ))
         }
       }
     } catch (err) {
@@ -949,19 +958,44 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
                         <div className="api-form-field">
                           <label className="api-form-label">模型</label>
                           <div className="api-model-picker">
-                            <input
-                              type="text"
-                              list="llm-model-options"
-                              value={formData.model}
-                              onChange={(e) => handleInputChange('model', e.target.value)}
-                              placeholder="选择或直接输入模型名"
-                              className="api-url-input"
-                            />
-                            <datalist id="llm-model-options">
-                              {modelOptions.map(m => (
-                                <option key={m} value={m} />
-                              ))}
-                            </datalist>
+                            {manualModel ? (
+                              <input
+                                type="text"
+                                value={formData.model}
+                                onChange={(e) => handleInputChange('model', e.target.value)}
+                                placeholder="输入模型名，例如 deepseek-flash"
+                                className="api-url-input"
+                                autoFocus
+                              />
+                            ) : (
+                              <div className="api-model-select">
+                                <select
+                                  value={formData.model}
+                                  onChange={(e) => {
+                                    if (e.target.value === MANUAL_MODEL_VALUE) {
+                                      setManualModel(true)
+                                      return
+                                    }
+                                    handleInputChange('model', e.target.value)
+                                  }}
+                                >
+                                  {modelOptions.map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                  ))}
+                                  <option value={MANUAL_MODEL_VALUE}>手动输入…</option>
+                                </select>
+                              </div>
+                            )}
+                            {manualModel && (
+                              <button
+                                type="button"
+                                className="api-fetch-models-btn"
+                                onClick={() => setManualModel(false)}
+                                title="回到模型列表"
+                              >
+                                <span>返回列表</span>
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="api-fetch-models-btn"

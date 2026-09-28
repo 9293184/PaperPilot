@@ -10,6 +10,7 @@ import {
   deleteChatSession,
   streamChatMessage,
   getQuickCommands,
+  fetchAPIConfig,
   type ChatSession,
   type ChatMessage,
   type QuickCommand,
@@ -28,12 +29,17 @@ type ChatSidebarProps = {
 
 type MessageDisplay = ChatMessage & { _streaming?: boolean }
 
-// Model options shown in the selector. The value is sent directly to the
-// backend where stream_chat() maps it to the provider's model identifier.
-const MODEL_OPTIONS: { key: string; label: string; hint: string }[] = [
-  { key: 'deepseek-v4-pro', label: 'Pro', hint: '深度思考' },
-  { key: 'deepseek-v4-flash', label: 'Flash', hint: '快速响应' },
-]
+type ModelOption = { key: string; label: string; hint: string }
+
+// 默认项：key 为空表示「沿用设置里配置的模型」，后端不会覆盖模型名。
+// 其余可选模型在挂载时从 /settings/api-config 读取（随所选厂商变化）。
+// 注意：这里不再写死 DeepSeek 的模型名——否则把厂商换成 Claude 等之后，
+// 会把 DeepSeek 的模型名发给对方接口。
+const DEFAULT_MODEL_OPTION: ModelOption = {
+  key: '',
+  label: '默认',
+  hint: '使用设置中配置的模型',
+}
 
 // Greeting templates for the empty state – picks based on time of day.
 function getGreeting() {
@@ -163,9 +169,8 @@ export default function ChatSidebar({
   const [editingContent, setEditingContent] = useState('')
   const [showSessionList, setShowSessionList] = useState(false)
   const [showModelDrawer, setShowModelDrawer] = useState(false)
-  const [selectedModel, setSelectedModel] = useState<string>(
-    () => MODEL_OPTIONS[1].key,
-  )
+  const [selectedModel, setSelectedModel] = useState<string>('')
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([DEFAULT_MODEL_OPTION])
   const abortRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -261,6 +266,25 @@ export default function ChatSidebar({
       abortRef.current?.abort()
       abortRef.current = null
     }
+  }, [])
+
+  // 模型选项随「设置 → API 服务」里选的厂商变化，挂载时读一次。
+  // 读取失败时只保留「默认」项（沿用配置里的模型），不影响问答。
+  useEffect(() => {
+    let cancelled = false
+    fetchAPIConfig()
+      .then(cfg => {
+        if (cancelled) return
+        const models = cfg.provider_info?.models?.[cfg.provider] ?? []
+        setModelOptions([
+          { key: '', label: '默认', hint: `使用设置中配置的模型（${cfg.model}）` },
+          ...models
+            .filter(m => m && m !== cfg.model)
+            .map(m => ({ key: m, label: m, hint: '' })),
+        ])
+      })
+      .catch(() => { /* 保留「默认」即可 */ })
+    return () => { cancelled = true }
   }, [])
 
   // Load sessions on mount and when paperId changes.
@@ -539,7 +563,7 @@ export default function ChatSidebar({
   const currentSession = sessions.find(s => s.id === currentSessionId)
   const displayTitle = currentSession?.title || paperTitle || 'AI 阅读助手'
 
-  const currentModelOption = MODEL_OPTIONS.find(m => m.key === selectedModel)
+  const currentModelOption = modelOptions.find(m => m.key === selectedModel)
 
   return (
     <div className={`chat-sidebar ${darkMode ? 'dark-mode' : ''}`}>
@@ -844,7 +868,7 @@ export default function ChatSidebar({
               {/* Model drawer popover */}
               {showModelDrawer && (
                 <div className="chat-model-popover">
-                  {MODEL_OPTIONS.map(opt => (
+                  {modelOptions.map(opt => (
                     <button
                       key={opt.key}
                       className={`chat-model-option ${selectedModel === opt.key ? 'active' : ''}`}

@@ -58,7 +58,7 @@ class Settings:
             self._protocol = getattr(config, "protocol", "") or ""
             self._api_key = config.api_key or os.getenv("DEEPSEEK_API_KEY", "")
             self._base_url = config.base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-            self._model = config.model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+            self._model = config.model or os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
             # MinerU config
             self._mineru_token = config.mineru.token or os.getenv("MINERU_API_TOKEN", "")
             self._mineru_model_version = config.mineru.model_version or os.getenv("MINERU_MODEL_VERSION", "vlm")
@@ -69,7 +69,7 @@ class Settings:
             self._protocol = os.getenv("LLM_PROTOCOL", "")
             self._api_key = os.getenv("DEEPSEEK_API_KEY", "")
             self._base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-            self._model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+            self._model = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
             self._mineru_token = os.getenv("MINERU_API_TOKEN", "")
             self._mineru_model_version = os.getenv("MINERU_MODEL_VERSION", "vlm")
             self._mineru_base_url = os.getenv("MINERU_BASE_URL", "https://mineru.net")
@@ -95,7 +95,7 @@ class Settings:
     @property
     def llm_model(self) -> str:
         self._load_api_config()
-        return self._model or "deepseek-v4-flash"
+        return self._model or "deepseek-flash"
 
     @property
     def llm_protocol(self) -> str:

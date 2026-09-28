@@ -87,7 +87,7 @@ class APIConfigUpdate(BaseModel):
     protocol: str = ""
     api_key: str = ""
     base_url: str = "https://api.deepseek.com"
-    model: str = "deepseek-v4-flash"
+    model: str = "deepseek-flash"
 
 
 class ModelsFetchRequest(BaseModel):
