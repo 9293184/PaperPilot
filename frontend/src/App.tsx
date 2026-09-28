@@ -142,20 +142,60 @@ function MainLayout({
   onBrowserFullscreenChange: (value: boolean) => void
   children: React.ReactNode
 }) {
+  // 移动端：侧边栏改为抽屉，由这里控制开关（桌面端按钮隐藏，不影响原布局）。
+  // 路由变化时自动收起，避免切页后抽屉还盖在内容上。
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const location = useLocation()
+  useEffect(() => {
+    setMobileNavOpen(false)
+  }, [location.pathname])
+
+  // 窄屏判定：移动端强制展开侧边栏（否则桌面端折叠过的用户，抽屉里只剩图标，
+  // 而文字是 JSX 条件渲染的，CSS 无法补回来）。
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    const onChange = () => setIsMobile(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${mobileNavOpen ? 'mobile-nav-open' : ''}`}>
+      <button
+        type="button"
+        className="mobile-nav-btn"
+        aria-label={mobileNavOpen ? '关闭导航' : '打开导航'}
+        aria-expanded={mobileNavOpen}
+        onClick={() => setMobileNavOpen((v) => !v)}
+      >
+        {mobileNavOpen ? (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        )}
+      </button>
       <Sidebar
         filteredPapers={papers}
         paperId={currentPaperId}
         sidebarWidth={sidebarWidth}
-        sidebarCollapsed={sidebarCollapsed}
+        sidebarCollapsed={isMobile ? false : sidebarCollapsed}
         isResizing={isResizing}
         darkMode={darkMode}
         themeMode={themeMode}
         sunInfo={sunInfo}
         weatherInfo={weatherInfo}
         onNavigate={onNavigate}
-        onToggleSidebar={onToggleSidebar}
+        onToggleSidebar={isMobile ? () => setMobileNavOpen(false) : onToggleSidebar}
         onEdit={onEdit}
         onReanalyze={onReanalyze}
         onDeleteClick={onDeleteClick}
@@ -172,7 +212,14 @@ function MainLayout({
         browserFullscreen={browserFullscreen}
         onBrowserFullscreenChange={onBrowserFullscreenChange}
       />
-      {!sidebarCollapsed && (
+      {mobileNavOpen && (
+        <div
+          className="mobile-nav-backdrop"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      {!sidebarCollapsed && !isMobile && (
         <SidebarResizer
           width={sidebarWidth}
           collapsed={sidebarCollapsed}

@@ -18089,5 +18089,117 @@ body.dark-mode .boot-error-card pre,
   }
 }
 
+/* ========== 移动端适配（A 档：浏览 / 搜索 / 详情 / 管理可用） ========== */
+
+/* 抽屉开关按钮：桌面端隐藏，移动端浮在左上角 */
+.mobile-nav-btn {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 78;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #334155;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+
+.mobile-nav-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.mobile-nav-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* 主框架：不再是横向两栏，内容占满整屏，侧边栏改为覆盖式抽屉 */
+  .app-shell {
+    display: block;
+  }
+
+  .mobile-nav-btn {
+    display: inline-flex;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 76;
+    /* 覆盖 JS 写入的内联宽度（桌面端可拖拽调宽，移动端固定） */
+    width: min(86vw, 320px) !important;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 8px 0 32px rgba(15, 23, 42, 0.22);
+  }
+
+  .app-shell.mobile-nav-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 74;
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(2px);
+  }
+
+  /* 拖拽调宽在触摸屏上没有意义 */
+  .sidebar-resizer {
+    display: none !important;
+  }
+
+  /* 顶部留出抽屉开关按钮的位置 */
+  .content {
+    width: 100%;
+    height: 100vh;
+    padding: 66px 16px 28px;
+  }
+
+  .content:has(.folder-page),
+  .content:has(.personalized-home) {
+    padding: 0;
+  }
+
+  /* 问答侧栏：手机上占满宽度，避免 360px 固定宽挤压正文 */
+  .chat-sidebar {
+    width: 100% !important;
+    max-width: 100%;
+    border-left: 0;
+  }
+
+  /* 触摸设备上没有 hover，提示类浮层不显示 */
+  .global-tooltip,
+  .paper-tooltip {
+    display: none !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .content {
+    padding: 62px 12px 24px;
+  }
+
+  .mobile-nav-btn {
+    top: 10px;
+    left: 10px;
+    width: 40px;
+    height: 40px;
+  }
+}
+
 
 
