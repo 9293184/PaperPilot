@@ -32,6 +32,7 @@ class Settings:
     _base_url: str | None = None
     _model: str | None = None
     _provider: str | None = None
+    _protocol: str | None = None
     _mineru_token: str | None = None
     _mineru_model_version: str | None = None
     _mineru_base_url: str | None = None
@@ -54,6 +55,7 @@ class Settings:
             from app.services.api_config import load_config
             config = load_config()
             self._provider = config.provider
+            self._protocol = getattr(config, "protocol", "") or ""
             self._api_key = config.api_key or os.getenv("DEEPSEEK_API_KEY", "")
             self._base_url = config.base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
             self._model = config.model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
@@ -64,6 +66,7 @@ class Settings:
         except Exception:
             # Fallback to environment variables
             self._provider = os.getenv("DEEPSEEK_PROVIDER", "deepseek")
+            self._protocol = os.getenv("LLM_PROTOCOL", "")
             self._api_key = os.getenv("DEEPSEEK_API_KEY", "")
             self._base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
             self._model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
@@ -76,20 +79,41 @@ class Settings:
         self._load_api_config()
         return self._provider or "deepseek"
 
+    # ===== 通用大模型配置（支持多家厂商 / 两种协议）=====
+    # 业务代码统一用 llm_*；deepseek_* 保留为别名，避免大范围改名。
+
     @property
-    def deepseek_api_key(self) -> str:
+    def llm_api_key(self) -> str:
         self._load_api_config()
         return self._api_key or ""
 
     @property
-    def deepseek_base_url(self) -> str:
+    def llm_base_url(self) -> str:
         self._load_api_config()
         return self._base_url or "https://api.deepseek.com"
 
     @property
-    def deepseek_model(self) -> str:
+    def llm_model(self) -> str:
         self._load_api_config()
         return self._model or "deepseek-v4-flash"
+
+    @property
+    def llm_protocol(self) -> str:
+        """调用协议：'openai'（OpenAI 兼容）或 'anthropic'（Claude）。"""
+        self._load_api_config()
+        return self._protocol or "openai"
+
+    @property
+    def deepseek_api_key(self) -> str:
+        return self.llm_api_key
+
+    @property
+    def deepseek_base_url(self) -> str:
+        return self.llm_base_url
+
+    @property
+    def deepseek_model(self) -> str:
+        return self.llm_model
 
     @property
     def mineru_token(self) -> str:
@@ -112,6 +136,7 @@ class Settings:
         self._base_url = None
         self._model = None
         self._provider = None
+        self._protocol = None
         self._mineru_token = None
         self._mineru_model_version = None
         self._mineru_base_url = None

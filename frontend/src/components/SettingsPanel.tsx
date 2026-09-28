@@ -15,6 +15,7 @@ import {
   downloadFullBackup,
   downloadPapersExport,
   restoreBackup,
+  fetchAPIModels,
   importReferences,
   downloadReferences,
   INTEROP_FORMATS,
@@ -163,6 +164,7 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
   const [apiConfig, setApiConfig] = useState<APIConfigType | null>(null)
   const [formData, setFormData] = useState<APIConfigUpdate>({
     provider: 'deepseek',
+    protocol: 'openai',
     api_key: '',
     base_url: 'https://api.deepseek.com',
     model: 'deepseek-v4-flash',
@@ -173,6 +175,10 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [saveMessage, setSaveMessage] = useState<string>('')
+  // 从厂商接口拉取到的模型列表（拉取前用预设的「常用模型」兜底）
+  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [isFetchingModels, setIsFetchingModels] = useState(false)
+  const [modelsMessage, setModelsMessage] = useState('')
 
   // MinerU config state
   const [mineruFormData, setMineruFormData] = useState<MinerUConfigUpdate>({
@@ -438,6 +444,7 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
       setApiConfig(config)
       setFormData({
         provider: config.provider,
+        protocol: config.protocol,
         api_key: config.api_key,
         base_url: config.base_url,
         model: config.model,
@@ -460,12 +467,43 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
       return {
         ...prev,
         provider,
+        // 跟随厂商预设切换协议（自定义厂商时预设为 OpenAI 兼容，用户可手改）
+        protocol: providerItem?.protocol ?? prev.protocol,
         base_url: newBaseUrl,
         model: newModel,
       }
     })
+    // 换厂商后旧的模型列表不再适用
+    setFetchedModels([])
+    setModelsMessage('')
     setTestResult(null)
     setSaveMessage('')
+  }
+
+  const handleFetchModels = async () => {
+    if (isFetchingModels) return
+    setIsFetchingModels(true)
+    setModelsMessage('')
+    try {
+      const result = await fetchAPIModels({
+        provider: formData.provider,
+        protocol: formData.protocol,
+        api_key: formData.api_key,
+        base_url: formData.base_url,
+      })
+      setModelsMessage(result.message)
+      if (result.success && result.models.length > 0) {
+        setFetchedModels(result.models)
+        // 当前模型不在列表里就自动选中第一个，省得用户再点一次
+        if (!result.models.includes(formData.model)) {
+          setFormData(prev => ({ ...prev, model: result.models[0] }))
+        }
+      }
+    } catch (err) {
+      setModelsMessage(err instanceof Error ? err.message : '获取模型列表失败')
+    } finally {
+      setIsFetchingModels(false)
+    }
   }
 
   const handleInputChange = (field: keyof APIConfigUpdate, value: string) => {
@@ -482,6 +520,7 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
       setApiConfig(saved)
       setFormData({
         provider: saved.provider,
+        protocol: saved.protocol,
         api_key: saved.api_key,
         base_url: saved.base_url,
         model: saved.model,
@@ -582,6 +621,18 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
   }, [open, onClose])
 
   const currentModels = apiConfig?.provider_info?.models[formData.provider] ?? []
+  const protocolOptions = apiConfig?.provider_info?.protocols ?? [
+    { id: 'openai', label: 'OpenAI 兼容' },
+    { id: 'anthropic', label: 'Anthropic (Claude)' },
+  ]
+  // 模型候选：优先用从接口拉到的真实列表，否则用预设的「常用模型」；
+  // 始终把当前值带上，避免受控输入被清空。
+  const modelOptions = (() => {
+    const base = fetchedModels.length > 0 ? fetchedModels : currentModels
+    const merged = [...base]
+    if (formData.model && !merged.includes(formData.model)) merged.unshift(formData.model)
+    return merged
+  })()
 
   if (!open) return null
 
@@ -875,24 +926,66 @@ export default function SettingsPanel({ open, darkMode, themeMode, sunInfo, init
                           </div>
                         </div>
                         <div className="api-form-field">
-                          <label className="api-form-label">模型</label>
-                          <div className="api-model-select">
+                          <label className="api-form-label">调用协议</label>
+                          <div className="api-provider-select">
                             <select
-                              value={formData.model}
-                              onChange={(e) => handleInputChange('model', e.target.value)}
+                              value={formData.protocol}
+                              onChange={(e) => handleInputChange('protocol', e.target.value)}
                             >
-                              {currentModels.length > 0 ? (
-                                currentModels.map(m => (
-                                  <option key={m} value={m}>{m}</option>
-                                ))
-                              ) : (
-                                <>
-                                  <option value="deepseek-v4-pro">deepseek-v4-pro</option>
-                                  <option value="deepseek-v4-flash">deepseek-v4-flash</option>
-                                </>
-                              )}
+                              {protocolOptions.map(p => (
+                                <option key={p.id} value={p.id}>{p.label}</option>
+                              ))}
                             </select>
                           </div>
+                          <span className="api-form-hint">
+                            {formData.provider === 'custom'
+                              ? '自定义厂商：请按对方文档选择协议'
+                              : '已按所选厂商自动匹配'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="api-form-row">
+                        <div className="api-form-field">
+                          <label className="api-form-label">模型</label>
+                          <div className="api-model-picker">
+                            <input
+                              type="text"
+                              list="llm-model-options"
+                              value={formData.model}
+                              onChange={(e) => handleInputChange('model', e.target.value)}
+                              placeholder="选择或直接输入模型名"
+                              className="api-url-input"
+                            />
+                            <datalist id="llm-model-options">
+                              {modelOptions.map(m => (
+                                <option key={m} value={m} />
+                              ))}
+                            </datalist>
+                            <button
+                              type="button"
+                              className="api-fetch-models-btn"
+                              onClick={handleFetchModels}
+                              disabled={isFetchingModels || !formData.api_key || !formData.base_url}
+                              title={!formData.api_key ? '请先填写 API 密钥' : '从该厂商接口拉取可用模型'}
+                            >
+                              {isFetchingModels ? (
+                                <>
+                                  <span className="api-spinner small" />
+                                  <span>获取中...</span>
+                                </>
+                              ) : (
+                                <span>获取模型列表</span>
+                              )}
+                            </button>
+                          </div>
+                          {modelsMessage ? (
+                            <span className="api-form-hint">{modelsMessage}</span>
+                          ) : modelOptions.length > 0 && fetchedModels.length === 0 ? (
+                            <span className="api-form-hint">
+                              以上为常用模型；点「获取模型列表」可拉取该厂商的全部模型
+                            </span>
+                          ) : null}
                         </div>
                       </div>
 

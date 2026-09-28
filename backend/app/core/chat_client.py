@@ -1,23 +1,15 @@
-"""Streaming chat client for DeepSeek API.
+"""问答用的流式客户端（薄封装）。
 
-Uses httpx for streaming SSE responses, separate from the synchronous
-urllib-based deepseek_client.py used for analysis.
-
-The client supports:
-- Streaming token responses via httpx.SSE
-- Cancellation via asyncio.Event
-- Error handling and retry logic
+HTTP 细节（OpenAI 兼容 / Anthropic 两种协议）已统一到 ``app.core.llm_client``，
+这里只保留问答特有的部分：上下文截断、重试、标题生成与错误类型。
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from typing import AsyncIterator
 
-import httpx
-
+from app.core import llm_client
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -28,7 +20,13 @@ logger = logging.getLogger(__name__)
 MAX_CONTEXT_CHARS = 60000
 
 # HTTP timeout for streaming connections (seconds).
-STREAM_TIMEOUT = 300
+STREAM_TIMEOUT = llm_client.STREAM_TIMEOUT
+
+# 生成标题用的模型；None 表示沿用当前配置的模型（跨厂商时更安全）
+TITLE_MODEL: str | None = None
+
+# Non-streaming timeout for short completions (title generation).
+SHORT_TIMEOUT = 30
 
 
 class ChatClientError(RuntimeError):
@@ -61,13 +59,13 @@ async def stream_chat(
     max_retries: int = 2,
     model: str | None = None,
 ) -> AsyncIterator[str]:
-    """Stream a chat completion response from DeepSeek.
+    """Stream a chat completion response.
 
     Args:
         messages: List of message dicts with 'role' and 'content' keys.
         temperature: Sampling temperature (0.0-2.0).
         max_retries: Maximum number of retry attempts for transient errors.
-        model: Override model name (e.g. 'deepseek-v4-pro', 'deepseek-v4-flash').
+        model: Override model name; None 表示沿用当前配置。
 
     Yields:
         String tokens/chunks from the model response.
@@ -75,75 +73,30 @@ async def stream_chat(
     Raises:
         ChatClientError: If the API call fails after all retries.
     """
-    if not settings.deepseek_api_key:
+    if not settings.llm_api_key:
         raise ChatClientError("API key not configured")
 
-    url = f"{settings.deepseek_base_url.rstrip('/')}/chat/completions"
-
-    effective_model = model or settings.deepseek_model
-
-    body = {
-        "model": effective_model,
-        "messages": messages,
-        "temperature": temperature,
-        "stream": True,
-    }
-
-    last_error: Exception | None = None
     # 一旦已经向调用方 yield 过内容，就不能再重试：重试会从头再推一遍，
     # 客户端会看到重复的文本前缀。
     yielded_any = False
+    last_error: Exception | None = None
+
     for attempt in range(max_retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
-                async with client.stream(
-                    "POST",
-                    url,
-                    json=body,
-                    headers={
-                        "Authorization": f"Bearer {settings.deepseek_api_key}",
-                        "Content-Type": "application/json",
-                    },
-                ) as response:
-                    response.raise_for_status()
-
-                    async for line in response.aiter_lines():
-                        line = line.strip()
-                        if not line or line == "data: [DONE]":
-                            continue
-
-                        if line.startswith("data: "):
-                            try:
-                                data = json.loads(line[6:])
-                                chunk = data.get("choices", [{}])[0]
-                                delta = chunk.get("delta", {})
-                                content = delta.get("content", "")
-                                if content:
-                                    yielded_any = True
-                                    yield content
-                            except (json.JSONDecodeError, KeyError, IndexError):
-                                continue
-
-                    return  # Success, exit the function
-
-        except httpx.HTTPStatusError as exc:
+            async for chunk in llm_client.stream_chat(
+                messages, temperature=temperature, model=model
+            ):
+                yielded_any = True
+                yield chunk
+            return
+        except llm_client.LLMError as exc:
             last_error = exc
             logger.warning(
-                "stream_chat http_error attempt=%d/%d status=%d",
-                attempt + 1, max_retries, exc.response.status_code,
+                "stream_chat failed attempt=%d/%d error=%s",
+                attempt + 1, max_retries, exc,
             )
             if attempt < max_retries and not yielded_any:
                 await _async_sleep(1 + attempt)
-                continue
-            break
-        except httpx.RequestError as exc:
-            last_error = exc
-            logger.warning(
-                "stream_chat request_error attempt=%d/%d error=%s",
-                attempt + 1, max_retries, str(exc),
-            )
-            if attempt < max_retries and not yielded_any:
-                await _async_sleep(2 + attempt * 2)
                 continue
             break
 
@@ -156,13 +109,6 @@ async def _async_sleep(seconds: float) -> None:
     """Simple async sleep helper."""
     import asyncio
     await asyncio.sleep(seconds)
-
-
-# Fast model used for lightweight tasks (e.g. session title generation).
-TITLE_MODEL = "deepseek-v4-flash"
-
-# Non-streaming timeout for short completions (title generation).
-SHORT_TIMEOUT = 30
 
 
 def _fallback_title(message: str) -> str:
@@ -191,8 +137,8 @@ def _fallback_title(message: str) -> str:
 async def generate_title(first_message: str) -> str:
     """Generate a concise title for a chat session from the first user message.
 
-    Uses a non-streaming LLM call with the fast model. Falls back to smart
-    truncation on any error so the session always gets a title.
+    Uses a non-streaming LLM call. Falls back to smart truncation on any error
+    so the session always gets a title.
 
     Args:
         first_message: The first user message in the session.
@@ -203,47 +149,38 @@ async def generate_title(first_message: str) -> str:
     if not first_message or not first_message.strip():
         return "新对话"
 
-    if not settings.deepseek_api_key:
+    if not settings.llm_api_key:
         return _fallback_title(first_message)
-
-    url = f"{settings.deepseek_base_url.rstrip('/')}/chat/completions"
-    body = {
-        "model": TITLE_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "你是对话标题生成器。根据用户的第一条消息，提炼出对话的核心主题，"
-                    "生成一个简短的标题（不超过15个字，不要加引号、书名号或标点结尾）。"
-                    "只输出标题文本本身。"
-                ),
-            },
-            {"role": "user", "content": first_message[:500]},
-        ],
-        "temperature": 0.3,
-        "stream": False,
-        "max_tokens": 30,
-    }
 
     try:
-        async with httpx.AsyncClient(timeout=SHORT_TIMEOUT) as client:
-            response = await client.post(
-                url,
-                json=body,
-                headers={
-                    "Authorization": f"Bearer {settings.deepseek_api_key}",
-                    "Content-Type": "application/json",
+        title = await _run_blocking(
+            llm_client.chat_completion,
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是对话标题生成器。根据用户的第一条消息，提炼出对话的核心主题，"
+                        "生成一个简短的标题（不超过15个字，不要加引号、书名号或标点结尾）。"
+                        "只输出标题文本本身。"
+                    ),
                 },
-            )
-            response.raise_for_status()
-            data = response.json()
-            title = data["choices"][0]["message"]["content"].strip()
-            # Clean up stray quotes / newlines the model may add.
-            title = title.strip("\"'""「」『』").replace("\n", " ").strip()
-            title = " ".join(title.split())
-            if title and len(title) <= 30:
-                return title
-            return _fallback_title(first_message)
-    except Exception as exc:
-        logger.warning("generate_title failed, using fallback: %s", exc)
+                {"role": "user", "content": first_message},
+            ],
+            temperature=0.3,
+            max_tokens=64,
+            model=TITLE_MODEL,
+            timeout=SHORT_TIMEOUT,
+        )
+    except Exception as exc:  # noqa: BLE001 - 标题失败不能影响问答
+        logger.warning("generate_title failed, fallback to truncation: %s", exc)
         return _fallback_title(first_message)
+
+    title = (title or "").strip().strip('"').strip("'").strip("《》").strip()
+    return title or _fallback_title(first_message)
+
+
+async def _run_blocking(func, *args, **kwargs):
+    """在线程池里执行同步调用，避免阻塞事件循环。"""
+    from fastapi.concurrency import run_in_threadpool
+
+    return await run_in_threadpool(func, *args, **kwargs)

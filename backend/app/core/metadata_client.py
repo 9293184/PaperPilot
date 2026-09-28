@@ -5,9 +5,8 @@ from __future__ import annotations
 import ast
 import json
 import re
-import urllib.error
-import urllib.request
 
+from app.core import llm_client
 from app.core.config import settings
 from app.core.debug_log import append_debug_record
 from app.core.deepseek_client import _parse_json_safely, _sanitize_json_content
@@ -17,45 +16,42 @@ class MetadataError(RuntimeError):
     pass
 
 
+def _call_llm(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    temperature: float = 0.0,
+    timeout: int = 60,
+    json_object: bool = False,
+) -> str:
+    """调用大模型（协议差异由 llm_client 处理：OpenAI 兼容 / Anthropic）。"""
+    return llm_client.chat_completion(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=temperature,
+        timeout=timeout,
+        json_object=json_object,
+    )
+
+
 def extract_abstract_only(abstract_region: str) -> str:
-    if not settings.deepseek_api_key:
-        raise MetadataError("DEEPSEEK_API_KEY is not configured")
+    if not settings.llm_api_key:
+        raise MetadataError("API key is not configured")
 
     if not abstract_region:
         return ""
 
     system_prompt = "你是一个论文摘要提取助手。你的任务是从给定文本中提取摘要原文。不要总结，不要改写，不要猜测。如果文本中包含摘要，直接返回摘要内容；否则返回空字符串。"
-    
+
     user_prompt = f"请从以下文本中提取论文摘要原文：\n\n{abstract_region}"
-    
-    body = {
-        "model": settings.deepseek_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.0,
-    }
-    
-    request = urllib.request.Request(
-        f"{settings.deepseek_base_url.rstrip('/')}/chat/completions",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {settings.deepseek_api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    
+
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.URLError as exc:
+        content = _call_llm(system_prompt, user_prompt, temperature=0.0, timeout=60)
+    except llm_client.LLMError as exc:
         raise MetadataError(str(exc)) from exc
-    
-    data = json.loads(raw)
-    content = data["choices"][0]["message"]["content"]
-    
+
     content = content.strip()
     
     if content.startswith('"') and content.endswith('"'):
@@ -159,7 +155,7 @@ def _translate_to_chinese(text: str, paper_id: str = "unknown") -> str:
     """
     if not text or not text.strip():
         return ""
-    if not settings.deepseek_api_key:
+    if not settings.llm_api_key:
         return ""
 
     system_prompt = (
@@ -170,38 +166,16 @@ def _translate_to_chinese(text: str, paper_id: str = "unknown") -> str:
     )
     user_prompt = f"请将以下英文摘要翻译为中文：\n\n{text}"
 
-    body = {
-        "model": settings.deepseek_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.0,
-    }
     append_debug_record(
         paper_id,
         "translate_abstract_request",
         text_len=len(text),
     )
-    request = urllib.request.Request(
-        f"{settings.deepseek_base_url.rstrip('/')}/chat/completions",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {settings.deepseek_api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.URLError as exc:
+        content = _call_llm(system_prompt, user_prompt, temperature=0.0, timeout=60).strip()
+    except llm_client.LLMError as exc:
         append_debug_record(paper_id, "translate_abstract_failed", error=str(exc))
         return ""
-
-    data = json.loads(raw)
-    content = data["choices"][0]["message"]["content"].strip()
 
     if content.startswith('"') and content.endswith('"'):
         content = content[1:-1].strip()
@@ -1302,8 +1276,8 @@ def _build_ocr_metadata_prompt(payload: dict[str, str]) -> tuple[str, str, str]:
 
 
 def extract_metadata(payload: dict[str, str]) -> dict[str, str]:
-    if not settings.deepseek_api_key:
-        raise MetadataError("DEEPSEEK_API_KEY is not configured")
+    if not settings.llm_api_key:
+        raise MetadataError("API key is not configured")
 
     extraction_method = payload.get("extraction_method", "")
     is_markdown_input = extraction_method == "mineru"
@@ -1313,45 +1287,24 @@ def extract_metadata(payload: dict[str, str]) -> dict[str, str]:
     else:
         system_prompt, user_prompt, combined_text = _build_ocr_metadata_prompt(payload)
 
-    body = {
-        "model": settings.deepseek_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.0,
-        "response_format": {"type": "json_object"},
-    }
     append_debug_record(
         payload.get("paper_id", "unknown"),
         "metadata_request",
         extraction_method=extraction_method,
         is_markdown_input=is_markdown_input,
         combined_text_len=len(combined_text),
-        request_body=body,
-    )
-    request = urllib.request.Request(
-        f"{settings.deepseek_base_url.rstrip('/')}/chat/completions",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {settings.deepseek_api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=300) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.URLError as exc:
+        content = _call_llm(
+            system_prompt, user_prompt, temperature=0.0, timeout=300, json_object=True
+        )
+    except llm_client.LLMError as exc:
         raise MetadataError(str(exc)) from exc
 
-    data = json.loads(raw)
-    content = data["choices"][0]["message"]["content"]
     parsed = _parse_json_safely(content)
     append_debug_record(
         payload.get("paper_id", "unknown"),
         "metadata_response",
-        raw_response=data,
         model_content=content,
         parsed=parsed,
     )

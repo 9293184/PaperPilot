@@ -266,6 +266,116 @@ class TestAnalysisFallback:
             assert word not in joined, word
 
 
+class TestLLMProtocols:
+    """统一客户端对两种协议的适配（纯函数，不发请求）。"""
+
+    def test_normalize_protocol(self):
+        from app.core import llm_client as lc
+
+        assert lc.normalize_protocol("ANTHROPIC") == "anthropic"
+        assert lc.normalize_protocol("openai") == "openai"
+        assert lc.normalize_protocol("") == "openai"
+        assert lc.normalize_protocol("whatever") == "openai"
+
+    def test_openai_endpoints_headers_and_body(self):
+        from app.core import llm_client as lc
+
+        target = lc._Target("key-1", "https://api.openai.com/v1/", "openai")
+        assert target.chat_url == "https://api.openai.com/v1/chat/completions"
+        assert target.models_url == "https://api.openai.com/v1/models"
+        assert target.headers["Authorization"] == "Bearer key-1"
+
+        messages = [
+            {"role": "system", "content": "SYS"},
+            {"role": "user", "content": "USER"},
+        ]
+        body = lc._build_body(target, messages, 0.2, 128, "gpt-4o", False, json_object=True)
+        assert body["model"] == "gpt-4o"
+        assert body["temperature"] == 0.2
+        assert body["max_tokens"] == 128
+        assert body["response_format"] == {"type": "json_object"}
+        # OpenAI 的 system 就是普通的一条 message
+        assert body["messages"][0]["role"] == "system"
+
+    def test_anthropic_endpoints_headers_and_body(self):
+        from app.core import llm_client as lc
+
+        target = lc._Target("key-2", "https://api.anthropic.com", "anthropic")
+        assert target.chat_url == "https://api.anthropic.com/v1/messages"
+        assert target.models_url == "https://api.anthropic.com/v1/models"
+        assert target.headers["x-api-key"] == "key-2"
+        assert target.headers["anthropic-version"] == lc.ANTHROPIC_VERSION
+
+        messages = [
+            {"role": "system", "content": "SYS"},
+            {"role": "user", "content": "USER"},
+        ]
+        body = lc._build_body(target, messages, 0.2, None, "claude-x", False, json_object=True)
+        # system 必须提到顶层，且 messages 里不能再有 system
+        assert body["system"] == "SYS"
+        assert all(m["role"] != "system" for m in body["messages"])
+        # max_tokens 必填
+        assert body["max_tokens"] > 0
+        # Anthropic 不支持 response_format，必须忽略
+        assert "response_format" not in body
+
+    def test_extract_text_from_both_protocols(self):
+        from app.core import llm_client as lc
+
+        openai_target = lc._Target("k", "https://x/v1", "openai")
+        assert lc._extract_text(openai_target, {"choices": [{"message": {"content": "hello"}}]}) == "hello"
+
+        anthropic_target = lc._Target("k", "https://x", "anthropic")
+        payload = {"content": [{"type": "text", "text": "hello "}, {"type": "text", "text": "world"}]}
+        assert lc._extract_text(anthropic_target, payload) == "hello world"
+
+    def test_extract_delta_from_both_protocols(self):
+        from app.core import llm_client as lc
+
+        openai_target = lc._Target("k", "https://x/v1", "openai")
+        assert lc._extract_delta(openai_target, {"choices": [{"delta": {"content": "hi"}}]}) == "hi"
+
+        anthropic_target = lc._Target("k", "https://x", "anthropic")
+        delta_payload = {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hi"}}
+        assert lc._extract_delta(anthropic_target, delta_payload) == "hi"
+        # 非文本事件必须被忽略
+        assert lc._extract_delta(anthropic_target, {"type": "message_start"}) == ""
+
+
+class TestProviderPresets:
+    def test_presets_include_custom_and_anthropic(self):
+        from app.services.api_config import PROVIDER_PRESETS
+
+        ids = [p.id for p in PROVIDER_PRESETS]
+        assert "custom" in ids
+        anthropic = next(p for p in PROVIDER_PRESETS if p.id == "anthropic")
+        assert anthropic.protocol == "anthropic"
+
+    def test_default_protocol_for_provider(self):
+        from app.services.api_config import default_protocol_for
+
+        assert default_protocol_for("anthropic") == "anthropic"
+        assert default_protocol_for("deepseek") == "openai"
+        assert default_protocol_for("custom") == "openai"
+        assert default_protocol_for("unknown-vendor") == "openai"
+
+    def test_legacy_config_without_protocol_uses_preset_default(self, tmp_path, monkeypatch):
+        """老配置文件没有 protocol 字段时，按厂商预设补默认值。"""
+        import json as _json
+
+        from app.services import api_config
+
+        target = tmp_path / "api_config.json"
+        target.write_text(
+            _json.dumps({"provider": "anthropic", "api_key": "k", "base_url": "https://api.anthropic.com"}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(api_config, "CONFIG_FILE", target)
+
+        cfg = api_config.load_config()
+        assert cfg.protocol == "anthropic"
+
+
 class TestWorkspaceDirOverride:
     def test_env_var_moves_workspace_and_db(self, monkeypatch, tmp_path):
         """部署时用 PAPERPILOT_WORKSPACE_DIR 把运行时数据指到挂载卷。"""

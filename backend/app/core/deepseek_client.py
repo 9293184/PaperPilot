@@ -1,7 +1,7 @@
-"""Deepseek client helpers for eight-dimension analysis.
+"""八维分析所用的大模型调用。
 
-The client is intentionally thin: the service layer remains the place that owns
-prompt construction and fallback behavior.
+协议差异（OpenAI 兼容 / Anthropic）统一由 ``app.core.llm_client`` 处理，
+这里只保留提示词构造、重试与结果归一化。
 """
 
 from __future__ import annotations
@@ -10,9 +10,8 @@ import json
 import logging
 import re
 import time
-import urllib.error
-import urllib.request
 
+from app.core import llm_client
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -290,8 +289,8 @@ def _build_ocr_analysis_prompts(payload: dict[str, str]) -> tuple[str, str]:
 
 
 def analyze_text(payload: dict[str, str]) -> dict[str, str]:
-    if not settings.deepseek_api_key:
-        raise DeepseekError('DEEPSEEK_API_KEY is not configured')
+    if not settings.llm_api_key:
+        raise DeepseekError('API key is not configured')
 
     extraction_method = payload.get('extraction_method', '')
     is_markdown_input = extraction_method == 'mineru'
@@ -301,33 +300,21 @@ def analyze_text(payload: dict[str, str]) -> dict[str, str]:
     else:
         system_prompt, user_prompt = _build_ocr_analysis_prompts(payload)
 
-    body = {
-        'model': settings.deepseek_model,
-        'messages': [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_prompt},
-        ],
-        'temperature': 0.2,
-        'response_format': {'type': 'json_object'},
-    }
+    messages = [
+        {'role': 'system', 'content': system_prompt},
+        {'role': 'user', 'content': user_prompt},
+    ]
 
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES + 1):
-        request = urllib.request.Request(
-            f'{settings.deepseek_base_url.rstrip("/")}/chat/completions',
-            data=json.dumps(body).encode('utf-8'),
-            headers={
-                'Authorization': f'Bearer {settings.deepseek_api_key}',
-                'Content-Type': 'application/json',
-            },
-            method='POST',
-        )
         try:
-            with urllib.request.urlopen(request, timeout=API_TIMEOUT) as response:
-                raw = response.read().decode('utf-8')
-
-            data = json.loads(raw)
-            content = data['choices'][0]['message']['content']
+            # 统一客户端负责协议差异（OpenAI 兼容 / Anthropic）
+            content = llm_client.chat_completion(
+                messages,
+                temperature=0.2,
+                json_object=True,
+                timeout=API_TIMEOUT,
+            )
             parsed = _parse_json_safely(content)
 
             def _normalize_value(value):
@@ -367,25 +354,25 @@ def analyze_text(payload: dict[str, str]) -> dict[str, str]:
                 else:
                     result['tldr'] = tldr_value
             return result
-        except json.JSONDecodeError as exc:
+        except llm_client.LLMError as exc:
             last_error = exc
             logger.warning(
-                "analyze_text json_parse_failed attempt=%d/%d error=%s content_preview=%r",
-                attempt + 1, MAX_RETRIES + 1, exc, content[:200] if 'content' in locals() else "",
-            )
-            if attempt < MAX_RETRIES:
-                time.sleep(1 + attempt)  # brief backoff
-                continue
-        except urllib.error.URLError as exc:
-            last_error = exc
-            logger.warning(
-                "analyze_text network_error attempt=%d/%d error=%s",
+                "analyze_text request_failed attempt=%d/%d error=%s",
                 attempt + 1, MAX_RETRIES + 1, exc,
             )
             if attempt < MAX_RETRIES:
                 time.sleep(2 + attempt * 2)  # longer backoff for network errors
                 continue
             raise DeepseekError(str(exc)) from exc
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            logger.warning(
+                "analyze_text json_parse_failed attempt=%d/%d error=%s",
+                attempt + 1, MAX_RETRIES + 1, exc,
+            )
+            if attempt < MAX_RETRIES:
+                time.sleep(1 + attempt)  # brief backoff
+                continue
 
     # All retries exhausted
     raise DeepseekError(

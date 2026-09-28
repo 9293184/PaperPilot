@@ -10762,6 +10762,64 @@ body.dark-mode .boot-error-card pre,
   width: 100%;
 }
 
+/* 模型选择：可下拉可手输 + 一键获取模型列表 */
+.api-model-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.api-model-picker .api-url-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.api-fetch-models-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: 1px solid rgba(124, 140, 248, 0.45);
+  border-radius: 10px;
+  background: rgba(124, 140, 248, 0.1);
+  color: #5b6bd6;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.api-fetch-models-btn:hover:not(:disabled) {
+  background: rgba(124, 140, 248, 0.2);
+  border-color: rgba(124, 140, 248, 0.65);
+}
+
+.api-fetch-models-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.api-form-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.dark-mode .api-fetch-models-btn {
+  color: #a5b4fc;
+  border-color: rgba(124, 140, 248, 0.4);
+  background: rgba(124, 140, 248, 0.14);
+}
+
+.dark-mode .api-form-hint {
+  color: #7c8aa5;
+}
+
 .api-provider-select select,
 .api-model-select select {
   width: 100%;

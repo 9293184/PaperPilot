@@ -304,6 +304,8 @@ export type MinerUConfigBrief = {
 
 export type APIConfig = {
   provider: string
+  /** 调用协议：'openai'（OpenAI 兼容）或 'anthropic'（Claude） */
+  protocol: string
   api_key: string
   base_url: string
   model: string
@@ -312,23 +314,52 @@ export type APIConfig = {
   provider_info: ProviderInfo
 }
 
+export type ProtocolOption = {
+  id: string
+  label: string
+}
+
 export type ProviderInfo = {
   providers: ProviderItem[]
   models: Record<string, string[]>
+  protocols?: ProtocolOption[]
+  defaults?: {
+    provider: string
+    protocol: string
+    base_url: string
+    model: string
+  }
 }
 
 export type ProviderItem = {
   id: string
   name: string
+  protocol: string
   default_base_url: string
   models: string[]
+  note?: string
 }
 
 export type APIConfigUpdate = {
   provider: string
+  /** 留空则由后端按厂商预设决定 */
+  protocol: string
   api_key: string
   base_url: string
   model: string
+}
+
+export type ModelsFetchRequest = {
+  provider: string
+  protocol: string
+  api_key: string
+  base_url: string
+}
+
+export type ModelsFetchResult = {
+  success: boolean
+  message: string
+  models: string[]
 }
 
 export type TestResult = {
@@ -354,6 +385,16 @@ export function testAPIConfig(config: APIConfigUpdate) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   })
+}
+
+/** 从所选厂商的接口拉取可用模型列表（不保存配置）。 */
+export function fetchAPIModels(config: ModelsFetchRequest) {
+  return request<ModelsFetchResult>(`/settings/api-config/models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+    // 拉取模型列表可能因网络/厂商较慢，给足时间
+  }, 60_000)
 }
 
 export function fetchProviders() {

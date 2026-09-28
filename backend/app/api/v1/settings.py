@@ -17,6 +17,8 @@ from app.core.config import settings
 from app.services.api_config import (
     APIConfig,
     CONFIG_FILE,
+    default_protocol_for,
+    fetch_models,
     get_mineru_model_versions,
     get_provider_info,
     load_config,
@@ -80,9 +82,20 @@ def _format_size(size_bytes: int) -> str:
 
 class APIConfigUpdate(BaseModel):
     provider: str = "deepseek"
+    # 调用协议：'openai'（OpenAI 兼容）或 'anthropic'（Claude）。
+    # 留空则按所选厂商的预设自动决定。
+    protocol: str = ""
     api_key: str = ""
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-v4-flash"
+
+
+class ModelsFetchRequest(BaseModel):
+    """拉取模型列表的请求体（用未保存的配置试探）。"""
+    provider: str = "deepseek"
+    protocol: str = ""
+    api_key: str = ""
+    base_url: str = "https://api.deepseek.com"
 
 
 class MinerUConfigUpdate(BaseModel):
@@ -102,6 +115,7 @@ def get_api_config() -> dict:
     config = load_config()
     return {
         "provider": config.provider,
+        "protocol": config.protocol,
         "api_key": config.api_key,
         "base_url": config.base_url,
         "model": config.model,
@@ -121,29 +135,27 @@ def get_api_config() -> dict:
 def update_api_config(payload: APIConfigUpdate) -> dict:
     """Update API configuration."""
     config = load_config()
-    
-    # Validate model is supported for the provider
-    provider_models = get_provider_info().get("models", {}).get(payload.provider, [])
-    if provider_models and payload.model not in provider_models:
-        raise HTTPException(
-            status_code=400,
-            detail=f"模型 '{payload.model}' 不受支持，可选模型: {', '.join(provider_models)}"
-        )
-    
+
+    # 协议：显式给了就用它，否则按厂商预设决定。
+    # 不再校验模型是否在预设列表里——模型可以从接口拉取，也允许自定义。
+    protocol = payload.protocol.strip() or default_protocol_for(payload.provider)
+
     new_config = APIConfig(
         provider=payload.provider,
+        protocol=protocol,
         api_key=payload.api_key.strip(),
         base_url=payload.base_url.strip(),
-        model=payload.model,
+        model=payload.model.strip(),
         mineru=config.mineru,  # Preserve MinerU config
     )
     saved = save_config(new_config)
-    
+
     # Reset settings to force reload from new config file
     settings.reset()
-    
+
     return {
         "provider": saved.provider,
+        "protocol": saved.protocol,
         "api_key": saved.api_key,
         "base_url": saved.base_url,
         "model": saved.model,
@@ -202,12 +214,23 @@ def test_api_config(payload: APIConfigUpdate) -> TestResultResponse:
     """Test API connection with the given configuration (without saving)."""
     config = APIConfig(
         provider=payload.provider,
+        protocol=payload.protocol.strip() or default_protocol_for(payload.provider),
         api_key=payload.api_key.strip(),
         base_url=payload.base_url.strip(),
-        model=payload.model,
+        model=payload.model.strip(),
     )
     result = test_connection(config)
     return TestResultResponse(**result)
+
+
+@router.post("/api-config/models")
+def fetch_api_models(payload: ModelsFetchRequest) -> dict:
+    """从所选厂商的接口拉取可用模型列表（不保存配置）。"""
+    return fetch_models(
+        api_key=payload.api_key.strip(),
+        base_url=payload.base_url.strip(),
+        protocol=payload.protocol.strip() or default_protocol_for(payload.provider),
+    )
 
 
 @router.get("/providers")
