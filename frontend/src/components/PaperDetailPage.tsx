@@ -415,6 +415,13 @@ export default function PaperDetailPage({
   const apiKeyMissing = /not configured|未配置/i.test(errorText)
   const analysisUnavailable = !detail?.analysis || detail.analysis.analysis_status === 'failed'
   const showApiKeyHint = apiKeyMissing && analysisUnavailable
+  // 分析失败但不是「未配置」时，把真实失败原因显示出来。
+  // 注意：失败时各维度一律留空（后端不再生成占位文案），所以必须给出说明，
+  // 否则用户只会看到一片「暂无分析」。
+  const analysisFailureReason =
+    detail?.analysis?.analysis_status === 'failed' && !apiKeyMissing
+      ? (detail.analysis.error_message || '').trim()
+      : ''
 
   const EXPECTED_STEPS = [
     'PDF 文档解析',
@@ -773,6 +780,20 @@ export default function PaperDetailPage({
         </section>
       )}
 
+      {/* ===== 分析失败提示（非「未配置」原因） ===== */}
+      {analysisFailureReason && (
+        <section className="detail-section">
+          <div className="analysis-failure-hint">
+            <span className="analysis-failure-icon">⚠️</span>
+            <div className="analysis-failure-body">
+              <h4>分析未完成</h4>
+              <p>{analysisFailureReason}</p>
+              <p className="analysis-failure-tip">排查后可在论文上点「重新分析」重试。</p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ===== TLDR + METADATA SIDE-BY-SIDE ===== */}
       <section className="detail-section detail-info-grid">
         {/* Left column: TLDR */}
@@ -1047,6 +1068,10 @@ export default function PaperDetailPage({
                 </button>
               )}
             </p>
+          </div>
+        ) : analysisFailureReason && !editing ? (
+          <div className="analysis-empty">
+            <p className="hint">分析未完成：{analysisFailureReason}</p>
           </div>
         ) : !detail.analysis && !editing ? (
           <div className="analysis-empty">

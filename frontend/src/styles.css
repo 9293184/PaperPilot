@@ -9939,6 +9939,61 @@ body.dark-mode .boot-error-card pre,
   border-color: rgba(245, 158, 11, 0.5);
 }
 
+/* ========== 分析失败提示（非「未配置」原因） ========== */
+.analysis-failure-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.07);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.analysis-failure-icon {
+  flex-shrink: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.analysis-failure-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.analysis-failure-body h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #b91c1c;
+}
+
+.analysis-failure-body p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #991b1b;
+  word-break: break-word;
+}
+
+.analysis-failure-tip {
+  margin-top: 4px !important;
+  opacity: 0.85;
+}
+
+.dark-mode .analysis-failure-hint {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.dark-mode .analysis-failure-body h4 {
+  color: #fca5a5;
+}
+
+.dark-mode .analysis-failure-body p {
+  color: #fecaca;
+}
+
 /* ========== Dark Mode: Settings ========== */
 .dark-mode .sidebar-footer {
   border-top-color: rgba(51, 65, 85, 0.85);

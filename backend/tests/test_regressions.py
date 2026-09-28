@@ -249,6 +249,23 @@ class TestInitialSeed:
             assert conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 1
 
 
+class TestAnalysisFallback:
+    def test_fallback_is_empty_not_placeholder_text(self):
+        """回归：分析失败时不得填入「Demo 降级输出」之类的占位文案。
+
+        之前会把八个维度填满占位文字，状态虽是 failed，用户却会误以为分析成功。
+        """
+        from app.core.analysis import DEFAULT_FIELDS, _fallback_analysis
+
+        result = _fallback_analysis()
+        assert set(result) == set(DEFAULT_FIELDS)
+        assert all(value == "" for value in result.values()), result
+
+        joined = " ".join(result.values())
+        for word in ("Demo", "demo", "降级", "当前版本"):
+            assert word not in joined, word
+
+
 class TestWorkspaceDirOverride:
     def test_env_var_moves_workspace_and_db(self, monkeypatch, tmp_path):
         """部署时用 PAPERPILOT_WORKSPACE_DIR 把运行时数据指到挂载卷。"""

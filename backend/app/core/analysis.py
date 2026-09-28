@@ -140,20 +140,14 @@ def _fallback_metadata(parsed: dict[str, str]) -> dict[str, str]:
     }
 
 
-def _fallback_analysis(parsed: dict[str, str]) -> dict[str, str]:
-    abstract = parsed.get("abstract", "")[:1200]
-    full_text = parsed.get("full_text", "")[:2400]
-    return {
-        "tldr": "当前为 Demo 降级输出，无法基于全文生成 TLDR；建议补充完整 PDF 后重新分析。",
-        "motivation": abstract or full_text or "文中未明确提供完整摘要与正文时，仅能基于现有文本推断研究意图；建议补充完整 PDF 原文。",
-        "methodology": parsed.get("method", "") or "文中未明确提供方法细节时，仅能从已有内容推断核心流程；建议补充方法部分以获得更准确的结构化分析。",
-        "experiments": parsed.get("experiments", "") or "文中未明确提供实验细节时，无法确认数据集、指标与对比基线；建议补充实验章节后再分析有效性。",
-        "resources": "当前版本未获取到足够信息来精确判断训练资源、算力或推理成本，因此只能标记为文中未明确说明。",
-        "ablation": "当前版本未获取到完整消融信息，无法判断各模块贡献与设计必要性。",
-        "conclusion": parsed.get("conclusion", "") or "文中未明确提供完整结论时，仅能依据已有内容概括作者的主要倾向。",
-        "strengths": "输出结构固定，便于快速阅读、归纳和后续人工校正，适合作为论文理解的第一版草稿。",
-        "weaknesses": "当前为 Demo 版本，对原文可解析文本依赖较强；若 PDF 是扫描件或文本提取失败，分析深度会明显下降。",
-    }
+def _fallback_analysis() -> dict[str, str]:
+    """分析失败时的结果：所有维度一律留空，失败原因由 error_message 携带。
+
+    此前这里会填入「当前为 Demo 降级输出…」之类的占位文案：状态虽然是
+    failed，但八个维度都被填满，用户会误以为分析成功了。现在失败即留空，
+    由前端根据 analysis_status + error_message 给出明确提示。
+    """
+    return {field: "" for field in DEFAULT_FIELDS}
 
 
 def _is_truly_valid_abstract(text: str) -> bool:
@@ -301,7 +295,7 @@ def build_analysis_payload(parsed: dict[str, str]) -> dict[str, str]:
         append_debug_record(paper_id, "analysis_build_done", payload=payload)
         return payload
     except (DeepseekError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        fallback = _fallback_analysis(parsed)
+        fallback = _fallback_analysis()
         fallback["raw_json"] = json.dumps(fallback, ensure_ascii=False)
         fallback["analysis_status"] = "failed"
         fallback["model_name"] = "fallback"
