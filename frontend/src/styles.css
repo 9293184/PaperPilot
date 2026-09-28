@@ -18236,6 +18236,41 @@ body.dark-mode .boot-error-card pre,
   .api-form-row-2col {
     grid-template-columns: 1fr;
   }
+
+  /* ===== 窄屏下的挤压问题（通用）=====
+     这些都是「固定宽度的图标/徽章/按钮 + 可伸缩的文字列（min-width: 0）」的行，
+     窄屏时文字列会被挤到只剩一个字宽，中文于是逐字换行。统一改为上下排列。 */
+  .backup-card-header,
+  .storage-detail-header,
+  .duplicate-candidate-card,
+  .search-result-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* 图标 / 评分徽章不必占满整行 */
+  .backup-card-icon,
+  .storage-detail-icon,
+  .candidate-score-badge {
+    align-self: flex-start;
+  }
+
+  /* 操作按钮占满一行，既避免挤压也更方便点按 */
+  .backup-action-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 列表行：允许换行，文字列独占一行 */
+  .folder-paper-row,
+  .file-row,
+  .folder-tree-item {
+    flex-wrap: wrap;
+  }
+
+  .folder-paper-row-main {
+    flex: 1 1 100%;
+  }
 }
 
 @media (max-width: 480px) {
