@@ -274,6 +274,7 @@ function PaperDetailRoute({
   onCancelDelete,
   actionLoading,
   browserFullscreen,
+  onOpenApiSettings,
 }: {
   onRefreshList: () => Promise<void>
   tagRefreshKey: number
@@ -286,6 +287,7 @@ function PaperDetailRoute({
   onCancelDelete: () => void
   actionLoading: boolean
   browserFullscreen: boolean
+  onOpenApiSettings: () => void
 }) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -430,6 +432,7 @@ function PaperDetailRoute({
       }}
       onConfirmDelete={onConfirmDelete}
       onCancelDelete={onCancelDelete}
+      onOpenApiSettings={onOpenApiSettings}
     />
   )
 }
@@ -1094,6 +1097,7 @@ export default function App() {
             onCancelDelete={handleCancelDelete}
             actionLoading={actionLoading}
             browserFullscreen={browserFullscreen}
+            onOpenApiSettings={() => { setSettingsInitialSection('api'); setSettingsPanelOpen(true) }}
           />
         } />
       </Route>

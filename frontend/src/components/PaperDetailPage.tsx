@@ -27,6 +27,8 @@ type PaperDetailPageProps = {
   // (preserving fullscreen) instead of opening a new tab (which would lose
   // focus and exit fullscreen).
   browserFullscreen?: boolean
+  // 打开设置面板并定位到「API 服务」：未配置 API Key 时引导用户去补充。
+  onOpenApiSettings?: () => void
 }
 
 function extractionBadge(method: string) {
@@ -105,6 +107,7 @@ export default function PaperDetailPage({
   onCancelDelete,
   tagRefreshKey,
   browserFullscreen,
+  onOpenApiSettings,
 }: PaperDetailPageProps) {
   const navigate = useNavigate()
   const [editData, setEditData] = useState<PaperEditData>({})
@@ -404,6 +407,14 @@ export default function PaperDetailPage({
 
   const isAnalyzing = !!(detail && isAnalyzingStatus(detail.status))
   const isDone = detail?.status === 'done'
+
+  // 未配置大模型 API Key 时，元数据提取与深度分析都会失败，后端会把原因
+  // （如 "DEEPSEEK_API_KEY is not configured"）写进 error_message。
+  // 这里据此判断，用于引导用户去「设置 → API 服务」补充配置。
+  const errorText = `${detail?.analysis?.error_message ?? ''} ${detail?.metadata?.error_message ?? ''}`
+  const apiKeyMissing = /not configured|未配置/i.test(errorText)
+  const analysisUnavailable = !detail?.analysis || detail.analysis.analysis_status === 'failed'
+  const showApiKeyHint = apiKeyMissing && analysisUnavailable
 
   const EXPECTED_STEPS = [
     'PDF 文档解析',
@@ -741,6 +752,27 @@ export default function PaperDetailPage({
         </div>
       </section>
 
+      {/* ===== 未配置 API Key 提示 ===== */}
+      {showApiKeyHint && (
+        <section className="detail-section">
+          <div className="api-key-hint">
+            <span className="api-key-hint-icon">🔑</span>
+            <div className="api-key-hint-body">
+              <h4>尚未配置大模型 API Key</h4>
+              <p>
+                元数据提取、TLDR 一句话精读与八维深度分析都需要调用大模型接口。
+                配置后点「重新分析」即可生成。
+              </p>
+            </div>
+            {onOpenApiSettings && (
+              <button type="button" className="api-key-hint-btn" onClick={onOpenApiSettings}>
+                去配置
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* ===== TLDR + METADATA SIDE-BY-SIDE ===== */}
       <section className="detail-section detail-info-grid">
         {/* Left column: TLDR */}
@@ -772,7 +804,9 @@ export default function PaperDetailPage({
                   </div>
                 </div>
               ) : (
-                <p className="tldr-text">{detail.analysis?.tldr || '暂无 TLDR 摘要'}</p>
+                <p className="tldr-text">
+                  {detail.analysis?.tldr || (showApiKeyHint ? '尚未配置 API Key，无法生成 TLDR' : '暂无 TLDR 摘要')}
+                </p>
               )}
             </div>
           </div>
@@ -1003,7 +1037,18 @@ export default function PaperDetailPage({
           </span>
         </div>
 
-        {!detail.analysis && !editing ? (
+        {showApiKeyHint && !editing ? (
+          <div className="analysis-empty">
+            <p className="hint">
+              尚未配置大模型 API Key，无法生成八维深度分析。
+              {onOpenApiSettings && (
+                <button type="button" className="api-key-hint-inline-btn" onClick={onOpenApiSettings}>
+                  去配置
+                </button>
+              )}
+            </p>
+          </div>
+        ) : !detail.analysis && !editing ? (
           <div className="analysis-empty">
             <p className="hint">上传原件后会自动触发分析，完成后这里会展示结果。</p>
           </div>
