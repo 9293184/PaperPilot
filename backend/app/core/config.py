@@ -5,6 +5,10 @@ and future refactors do not scatter filesystem assumptions across modules.
 
 API configuration is loaded from the workspace/api_config.json file,
 with fallback to environment variables for backward compatibility.
+
+部署相关：运行时数据目录（数据库、上传的 PDF、日志、api_config.json）默认在
+仓库根的 ``workspace/``，可用环境变量 ``PAPERPILOT_WORKSPACE_DIR`` 覆盖——
+容器/云平台（如 Railway）把持久化卷挂到别处时必须用它。
 """
 
 from __future__ import annotations
@@ -31,6 +35,15 @@ class Settings:
     _mineru_token: str | None = None
     _mineru_model_version: str | None = None
     _mineru_base_url: str | None = None
+
+    def __post_init__(self) -> None:
+        # 允许把运行时数据目录指到别处（云平台挂载持久化卷时必需）。
+        # 注意：db_path 的默认值是在类定义时按「默认 workspace_dir」算出来的，
+        # 所以这里必须一并重算，否则数据库仍会落在默认位置。
+        override = os.getenv("PAPERPILOT_WORKSPACE_DIR", "").strip()
+        if override:
+            self.workspace_dir = Path(override).expanduser().resolve()
+            self.db_path = self.workspace_dir / "paperreading.db"
 
     def _load_api_config(self) -> None:
         """Load API configuration from the config file."""

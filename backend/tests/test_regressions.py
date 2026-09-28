@@ -248,6 +248,31 @@ class TestInitialSeed:
         with session() as conn:
             assert conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 1
 
+
+class TestWorkspaceDirOverride:
+    def test_env_var_moves_workspace_and_db(self, monkeypatch, tmp_path):
+        """部署时用 PAPERPILOT_WORKSPACE_DIR 把运行时数据指到挂载卷。"""
+        from app.core.config import Settings
+
+        target = tmp_path / "mounted-volume"
+        monkeypatch.setenv("PAPERPILOT_WORKSPACE_DIR", str(target))
+
+        s = Settings()
+        assert s.workspace_dir == target.resolve()
+        # db_path 的默认值是在类定义时算的，必须一并重算
+        assert s.db_path == target.resolve() / "paperreading.db"
+        # 内置数据目录不受影响（schema/seed/seed_pdfs 仍来自仓库）
+        assert (s.data_dir / "schema.sql").exists()
+        assert (s.data_dir / "seed_pdfs").is_dir()
+
+    def test_no_env_var_keeps_default(self, monkeypatch):
+        from app.core.config import Settings
+
+        monkeypatch.delenv("PAPERPILOT_WORKSPACE_DIR", raising=False)
+        s = Settings()
+        assert s.workspace_dir.name == "workspace"
+        assert s.db_path == s.workspace_dir / "paperreading.db"
+
     def test_missing_pdf_degrades_to_terminal_status(self, temp_workspace, monkeypatch):
         """内置 PDF 缺失时降级为终态，不能卡在「正在分析」。"""
         from app.services import seed_service

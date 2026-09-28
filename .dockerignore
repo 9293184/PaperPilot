@@ -1,0 +1,31 @@
+# 构建上下文排除项：这些都不需要进镜像，排除后能显著加快构建、减小体积。
+# 注意：Data/（含 schema.sql、seed.sql、seed_pdfs/）必须保留。
+
+# 版本控制与本地工具
+.git
+.gitignore
+.dev-scripts/
+
+# 运行时数据（含 API 密钥、数据库、上传的 PDF）——绝不能进镜像
+workspace/
+
+# 依赖与构建产物
+backend/.venv/
+backend/.pytest_cache/
+**/__pycache__/
+**/*.py[cod]
+frontend/node_modules/
+frontend/dist/
+
+# 大文件与无关内容
+backup.zip
+others/
+docs/
+*.log
+*.zip
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
